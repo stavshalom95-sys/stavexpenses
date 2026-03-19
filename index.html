@@ -231,6 +231,7 @@
     <button id="missingBadge" class="missing-badge" onclick="openMissingPanel()" style="display:none">⚠️ <span id="missingCount">0</span> חסרים</button>
     <button class="btn btn-outline" onclick="openSettings()" title="הגדרות EmailJS">⚙️</button>
     <button class="btn btn-green" onclick="toggleUpload()">📤 עדכן מאקסל</button>
+    <button class="btn btn-outline" onclick="downloadJsonBackup()" title="הורד גיבוי של כל הנתונים">💾 גיבוי</button>
     <button class="btn btn-outline" onclick="exportCSV()">📥 ייצוא CSV</button>
   </div>
 </header>
@@ -240,10 +241,10 @@
   <!-- UPLOAD ZONE -->
   <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()"
     ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
-    <input type="file" id="fileInput" accept=".xlsx,.xls" onchange="handleFile(this.files[0])">
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.json" onchange="handleFile(this.files[0])">
     <div class="upload-icon">📊</div>
     <div class="upload-title">גרור קובץ אקסל לכאן, או לחץ לבחירה</div>
-    <div class="upload-sub">קובץ Excel עם גיליון "הוצאות אשראי" — הנתונים יתעדכנו אוטומטית</div>
+    <div class="upload-sub">קובץ Excel (.xlsx) או גיבוי (.json) — הנתונים יתעדכנו אוטומטית</div>
     <div class="upload-progress" id="uploadProgress">
       <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
       <div class="progress-label" id="progressLabel">קורא קובץ...</div>
@@ -621,8 +622,13 @@ function onDrop(e) {
 
 function handleFile(file) {
   if (!file) return;
+  // Route JSON backup files differently
+  if (file.name.match(/\.json$/i)) {
+    handleJsonBackup(file);
+    return;
+  }
   if (!file.name.match(/\.xlsx?$/i)) {
-    showToast('⚠️ נא לבחור קובץ Excel בלבד (.xlsx)', 'error');
+    showToast('⚠️ נא לבחור קובץ Excel או JSON בלבד', 'error');
     return;
   }
 
@@ -790,6 +796,8 @@ function handleFile(file) {
         updateMissingBadge();
         document.getElementById('dataBadge').className = 'data-badge';
         showToast('✅ נטענו ' + records.length.toLocaleString('he') + ' עסקאות' + (autoCatCount > 0 ? ' | 🤖 ' + autoCatCount + ' קוטלגו אוטומטית' : '') + '!', 'success');
+        // Auto-save JSON backup
+        setTimeout(downloadJsonBackup, 800);
       }, 400);
 
     } catch(err) {
@@ -1015,6 +1023,44 @@ function switchTab(tab) {
   document.getElementById('panel-'+tab).classList.add('active');
   if (tab==='analytics') renderAnalytics();
   if (tab==='yearly') renderYearly();
+}
+
+// ===== BACKUP =====
+function downloadJsonBackup() {
+  const blob = new Blob([JSON.stringify(allData)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'expenses_backup_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+}
+
+function handleJsonBackup(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const parsed = JSON.parse(e.target.result);
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        showToast('⚠️ קובץ JSON לא תקין', 'error');
+        return;
+      }
+      allData = parsed;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(allData));
+      document.getElementById('uploadZone').className = 'upload-zone';
+      uploadVisible = false;
+      document.getElementById('filterYear').innerHTML = '<option value="">\u05d4\u05db\u05dc</option>';
+      document.getElementById('filterCategory').innerHTML = '<option value="">\u05d4\u05db\u05dc</option>';
+      document.getElementById('filterCard').innerHTML = '<option value="">\u05d4\u05db\u05dc</option>';
+      populateFilters();
+      clearFilters();
+      document.getElementById('dataBadge').textContent = '\u2705 \u05d2\u05d9\u05d1\u05d5\u05d9 ' + new Date().toLocaleDateString('he-IL');
+      document.getElementById('dataBadge').className = 'data-badge';
+      updateMissingBadge();
+      showToast('\u2705 \u05e0\u05d8\u05e2\u05e0\u05d5 ' + allData.length.toLocaleString('he') + ' \u05e2\u05e1\u05e7\u05d0\u05d5\u05ea \u05de\u05d2\u05d9\u05d1\u05d5\u05d9!', 'success');
+    } catch(err) {
+      showToast('\u274c \u05e9\u05d2\u05d9\u05d0\u05d4 \u05d1\u05e7\u05e8\u05d9\u05d0\u05ea JSON: ' + err.message, 'error');
+    }
+  };
+  reader.readAsText(file);
 }
 
 // ===== EXPORT =====
