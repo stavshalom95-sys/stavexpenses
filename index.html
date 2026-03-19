@@ -512,9 +512,7 @@ function exportMissing() {
   const headers = ['תאריך','שם עסק','קטגוריה','תת קטגוריה','סכום','כרטיס','הערות'];
   const rows = missing.map(r => [r.date, r.business, r.category||'', r.subCategory||'', r.amount, r.card||'', r.notes||'']
     .map(v => '"' + String(v).replace(/"/g,'""') + '"').join(','));
-  const csv = '﻿' + headers.join(',') + '
-' + rows.join('
-');
+  const csv = '\uFEFF' + headers.join(',') + '\n' + rows.join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));
   a.download = 'missing_' + new Date().toISOString().slice(0,10) + '.csv';
@@ -540,9 +538,7 @@ function sendMissingReport() {
     if (!r.subCategory || r.subCategory === 'nan' || r.subCategory === '') missingFields.push('תת-קטגוריה');
     if (!r.notes || r.notes === 'nan' || r.notes === '') missingFields.push('הערות');
     return (i+1) + '. ' + r.date + ' | ' + r.business + ' | ₪' + r.amount + ' | חסר: ' + missingFields.join(', ');
-  }).join('
-') + (missing.length > 100 ? '
-... ועוד ' + (missing.length - 100) + ' עסקאות' : '');
+  }).join('\n') + (missing.length > 100 ? '\n... ועוד ' + (missing.length - 100) + ' עסקאות' : '');
 
   try {
     emailjs.send(emailConfig.serviceId, emailConfig.templateId, {
