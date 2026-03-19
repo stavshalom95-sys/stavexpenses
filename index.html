@@ -600,9 +600,14 @@ function init() {
   const savedConfig = localStorage.getItem(CONFIG_KEY);
   if (savedConfig) try { emailConfig = JSON.parse(savedConfig); } catch(e) {}
   if (emailConfig.publicKey) { try { emailjs.init(emailConfig.publicKey); } catch(e) {} }
-  populateFilters();
-  applyFilters();
-  updateMissingBadge();
+  try {
+    populateFilters();
+    applyFilters();
+    updateMissingBadge();
+  } catch(e) {
+    console.error('Init error:', e);
+    document.getElementById('dateRange').textContent = '⚠️ שגיאה בטעינה: ' + e.message;
+  }
 }
 
 // ===== UPLOAD =====
@@ -811,7 +816,7 @@ function handleFile(file) {
 
 // ===== FILTERS =====
 function populateFilters() {
-  const years = [...new Set(allData.map(r => r.date.slice(0,4)))].sort().reverse();
+  const years = [...new Set(allData.filter(r => r.date).map(r => r.date.slice(0,4)))].sort().reverse();
   const cats = [...new Set(allData.map(r => r.category).filter(c => c && c !== 'nan'))].sort();
   const cards = [...new Set(allData.map(r => r.card).filter(c => c && c !== 'nan'))].sort();
 
