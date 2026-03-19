@@ -127,6 +127,9 @@
   tbody td { padding:11px 16px;vertical-align:middle; }
   .amount-cell { font-weight:600;font-variant-numeric:tabular-nums; }
   .cat-badge { display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.75rem;font-weight:500;background:var(--accent-glow);color:var(--accent2);border:1px solid rgba(99,102,241,0.3); }
+  .ai-badge { display:inline-block;padding:1px 5px;border-radius:10px;font-size:0.65rem;font-weight:600;margin-right:4px;vertical-align:middle;cursor:default; }
+  .ai-badge.from-memory { background:rgba(34,197,94,0.15);color:var(--green);border:1px solid rgba(34,197,94,0.3); }
+  .ai-badge.from-ai { background:rgba(99,102,241,0.15);color:var(--accent2);border:1px solid rgba(99,102,241,0.3); }
   .date-cell { color:var(--text2);font-size:0.82rem;white-space:nowrap; }
 
   /* PAGINATION */
@@ -332,6 +335,62 @@ const PAGE_SIZE = 50;
 let activeTab = 'transactions';
 let uploadVisible = false;
 
+
+// ===== AI CATEGORIZATION =====
+const CAT_RULES = [
+  { keys: ['בורגר','burger','smash','המבורגר','בשרים','grill','גריל','שיפוד','steakhouse'], cat: 'מסעדה', sub: 'המבורגר ובשרים' },
+  { keys: ['פיצ','pizza','dominos','דומינו'], cat: 'מסעדה', sub: 'פיצות' },
+  { keys: ['סושי','sushi','יפני','noodle','asian','סיני','רמן','ramen','wok'], cat: 'מסעדה', sub: 'סושי ואוכל יפני/אסייתי' },
+  { keys: ['קפה','cafe','coffee','לנדוור','landwer','ארומה','aroma','גרג','greg','רולדין','cofix','starbucks'], cat: 'מסעדה', sub: 'בתי קפה וביסטרו' },
+  { keys: ['פלאפל','חומוס','שווארמה','לאפה','בורקס','לבנוני','טורקי','מנגל'], cat: 'מסעדה', sub: 'אוכל מזרח תיכוני' },
+  { keys: ['פסטה','pasta','italian','ריזוטו'], cat: 'מסעדה', sub: 'אוכל איטלקי ופסטה' },
+  { keys: ['גלידה','ice cream','קינוח','מלבי','עוגה','cake','bakery','טריאנון'], cat: 'מסעדה', sub: 'קינוחים/גלידות/מלבי' },
+  { keys: ['שופרסל','רמי לוי','יינות ביתן','victory','ויקטורי','mega','מגה','אושר עד','osher','shufersal','יוחנוף','tiv taam','טיב טעם'], cat: 'מזון וצריכה', sub: 'סופרמרקטים ורשתות שיווק' },
+  { keys: ['חניה','parking','פארקינג','apcoa'], cat: 'תחבורה', sub: 'חניה' },
+  { keys: ['כביש 6','כביס6','trans israel','דרך ארץ'], cat: 'תחבורה', sub: 'כביש 6' },
+  { keys: ['רב-קו','rav-kav','ravkav','אגד','egged','רכבת ישראל'], cat: 'תחבורה', sub: 'תחבורה ציבורית' },
+  { keys: ['סופר פארם','super pharm','superpharm'], cat: 'רפואה ובתי מרקחת', sub: 'סופר פארם' },
+  { keys: ['בית מרקחת','pharmacy','רופא','מרפאה','קופת חולים','מכבי','כללית','clalit','maccabi'], cat: 'רפואה ובתי מרקחת', sub: 'בריאות ופארמה' },
+  { keys: ['amazon','אמזון','aliexpress','ebay','banggood','wish','shein'], cat: 'הזמנה אינטרנט', sub: 'אביזרים לבית וציוד אישי' },
+  { keys: ['netflix','נטפליקס','spotify','apple','google play','youtube','hbo','disney','playstation','xbox','microsoft'], cat: 'מנויים', sub: 'דברים לבית' },
+  { keys: ['סלקום','cellcom','פרתנר','partner','bezeq','בזק'], cat: 'מנויים', sub: 'חשבון לשרותי סלקום' },
+  { keys: ['gym','fitness','חדר כושר','ספורטק','holmes','הולמס','crossfit','קרוספיט','barefit','planfit'], cat: 'כושר', sub: 'חדר כושר' },
+  { keys: ['מועדון','night club','pub','פאב'], cat: 'יציאה', sub: 'מועדונים וברים' },
+  { keys: ['סרט','cinema','סינמה','yes planet','ישפלנט'], cat: 'יציאה', sub: 'סרט' },
+  { keys: ['zara','זארה','h&m','castro','קסטרו','renuar','רנואר','terminal x','nike','adidas','נעליים'], cat: 'ביגוד', sub: '' },
+  { keys: ['ביטוח','insurance','הראל','מגדל','הפניקס','מנורה'], cat: 'ביטוחים', sub: '' },
+  { keys: ['מספרה','barber','hair'], cat: 'מספרה', sub: '' },
+  { keys: ['דלק ','fuel','paz','פז','sonol','סונול'], cat: 'תחבורה', sub: 'דלק' },
+];
+
+function buildBusinessMemory() {
+  const mem = {};
+  allData.forEach(r => {
+    if (r.business && r.category && r.category !== 'nan' && r.category !== '') {
+      const key = r.business.trim().toLowerCase();
+      if (!mem[key]) mem[key] = { category: r.category, subCategory: r.subCategory || '' };
+    }
+  });
+  return mem;
+}
+
+function autoCategorize(businessName, memory) {
+  if (!businessName) return null;
+  const key = businessName.trim().toLowerCase();
+  if (memory[key]) return { category: memory[key].category, subCategory: memory[key].subCategory, source: 'memory' };
+  for (const [memKey, val] of Object.entries(memory)) {
+    if (memKey.length >= 4 && (key.includes(memKey) || memKey.includes(key))) {
+      return { category: val.category, subCategory: val.subCategory, source: 'memory' };
+    }
+  }
+  for (const rule of CAT_RULES) {
+    if (rule.keys.some(k => key.includes(k.toLowerCase()))) {
+      return { category: rule.cat, subCategory: rule.sub, source: 'ai' };
+    }
+  }
+  return null;
+}
+
 // ===== INIT =====
 function init() {
   const saved = localStorage.getItem(STORAGE_KEY);
@@ -493,6 +552,25 @@ function handleFile(file) {
         return;
       }
 
+      fill.style.width = '90%';
+      label.textContent = 'קטלוג אוטומטי...';
+
+      const memory = buildBusinessMemory();
+      let autoCatCount = 0;
+      records.forEach(r => {
+        const missingCat = !r.category || r.category === 'nan';
+        const missingSub = !r.subCategory || r.subCategory === 'nan';
+        if (missingCat || missingSub) {
+          const result = autoCategorize(r.business, memory);
+          if (result) {
+            if (missingCat) r.category = result.category;
+            if (missingSub) r.subCategory = result.subCategory;
+            r.autoCategory = result.source;
+            autoCatCount++;
+          }
+        }
+      });
+
       fill.style.width = '100%';
       label.textContent = 'שומר...';
 
@@ -514,7 +592,7 @@ function handleFile(file) {
 
         document.getElementById('dataBadge').textContent = '✅ עודכן ' + new Date().toLocaleDateString('he-IL');
         document.getElementById('dataBadge').className = 'data-badge';
-        showToast('✅ נטענו ' + records.length.toLocaleString('he') + ' עסקאות בהצלחה!', 'success');
+        showToast('✅ נטענו ' + records.length.toLocaleString('he') + ' עסקאות' + (autoCatCount > 0 ? ' | 🤖 ' + autoCatCount + ' קוטלגו אוטומטית' : '') + '!', 'success');
       }, 400);
 
     } catch(err) {
@@ -619,7 +697,7 @@ function renderTable() {
     : rows.map(r => `<tr>
         <td class="date-cell">${formatDate(r.date)}</td>
         <td>${escHtml(r.business)}</td>
-        <td><span class="cat-badge">${escHtml(r.category)}</span></td>
+        <td>${r.autoCategory === 'memory' ? '<span class="ai-badge from-memory" title="זוהה מהיסטוריה">🔁</span>' : r.autoCategory === 'ai' ? '<span class="ai-badge from-ai" title="זוהה אוטומטית">🤖</span>' : ''}<span class="cat-badge">${escHtml(r.category)}</span></td>
         <td style="color:var(--text2);font-size:0.82rem">${escHtml(r.subCategory)}</td>
         <td class="amount-cell">${r.currency||'₪'}${r.amount.toLocaleString('he',{maximumFractionDigits:2})}</td>
         <td style="color:var(--text2);font-size:0.8rem">${escHtml(r.card)}</td>
